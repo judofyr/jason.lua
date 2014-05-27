@@ -149,6 +149,7 @@ function Walker:read_string(skip)
   local parts
 
   if not skip then
+    -- TODO: Optimize string buffer for LuaJIT
     parts = {}
   end
 
