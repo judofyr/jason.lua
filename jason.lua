@@ -56,10 +56,6 @@ local function advance_space(walker, num)
   eat_space(walker)
 end
 
-local function set_position(walker, num)
-  walker.position = num
-end
-
 function jason.walk(data)
   local walker = { position = 1, data = data }
   setmetatable(walker, { __index = Walker })
@@ -129,7 +125,7 @@ function Walker:skip_number()
   local _, exp_stop = find(self.data, '^[eE][+-]?%d+', stop+1)
   stop = exp_stop or stop
 
-  set_position(self, stop+1)
+  self.position = stop + 1
   eat_space(self)
   return stop
 end
@@ -202,7 +198,7 @@ function Walker:read_string(skip)
     pos = pos + 1
   end
 
-  set_position(self, pos+1)
+  self.position = pos + 1
   eat_space(self)
 
   if not skip then
