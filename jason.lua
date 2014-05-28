@@ -316,6 +316,24 @@ function Walker:next_item()
   return true
 end
 
+function Walker:iter_object()
+  return function()
+    if self:next_item() then
+      return self:read_key()
+    end
+  end
+end
+
+function Walker:iter_array()
+  local i = 0
+  return function()
+    i = i + 1
+    if self:next_item() then
+      return i
+    end
+  end
+end
+
 function jason.decode(data)
   return jason.walk(data):read()
 end

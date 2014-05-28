@@ -14,7 +14,7 @@ assert(walker:type() == jason.ARRAY)
 
 -- Because we're at an array, we can use next_item() to see
 -- if there's anything in the array:
-while walker:next_item() then
+for idx in walker:iter_array() do
   -- At this point the walker looks like this:
   --    [{"id":123},{"id":456}]
   --     ^
@@ -22,10 +22,7 @@ while walker:next_item() then
   assert(walker:type() == jason.OBJECT)
 
   -- And then we can iterate over the object:
-  while walker:next_item() then
-    -- read_key() will read the key (or throw an exception on malformed JSON):
-    local key = walker:read_key()
-
+  for key in walker:iter_object() do
     if key == "id" then
       -- Notice how we get type checking as-we-parse. Parsing
       -- [{"id":"123"}] with this code would lead to a type error
