@@ -57,7 +57,7 @@ walker:type()
 --   jason.NULL
 --   jason.NUMBER
 --   jason.EOF
--- 
+--
 -- Note that this will not be correct if you're parsing invalid JSON.
 
 
@@ -72,7 +72,7 @@ walker:fork() --> Walker
 -- under the current position in the JSON is not of the expected type.
 
 
-walker:read() --> 
+walker:read() --> table, number, string, true, false, nil
 -- Parses either an object, array or primitive value at the current
 -- position in the JSON.
 
@@ -107,7 +107,7 @@ walker:read_key() --> string
 
 walker:next_item() --> bool
 -- Returns true if you're inside an object/array literal and there's
--- more items to the right of the current position. 
+-- more items to the right of the current position.
 
 
 ---- Skippers
