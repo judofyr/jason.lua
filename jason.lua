@@ -8,12 +8,15 @@ local insert = table.insert
 local byte = string.byte
 local concat = table.concat
 
+jason.NONE      = -1
+jason.ANY       = 0
 jason.OBJECT    = 1
 jason.ARRAY     = 2
 jason.STRING    = 3
 jason.NUMBER    = 4
-jason.PRIMITIVE = 5
-jason.EOF       = 6
+jason.BOOLEAN   = 5
+jason.NULL      = 6
+jason.EOF       = 7
 
 local OPEN_ARRAY   = 0x5B
 local CLOSE_ARRAY  = 0x5D
@@ -77,44 +80,43 @@ function Walker:type()
     return jason.ARRAY
   elseif char == QUOTE then
     return jason.STRING
-  elseif char == TRUE_FIRST or char == FALSE_FIRST or char == NULL_FIRST then
-    return jason.PRIMITIVE
+  elseif char == TRUE_FIRST or char == FALSE_FIRST then
+    return jason.BOOLEAN
+  elseif char == NULL_FIRST then
+    return jason.NULL
   elseif char == nil then
     return jason.EOF
   else
-    -- Don't bother checking if it's really a number. read_number()
+    -- Don't bother checking if it's really a number. handle_number()
     -- will throw an exception when it fails to parse it.
     return jason.NUMBER
   end
 end
 
+---- Handlers
+-- All of these handlers are optimistic: They assume that you are
+-- indeeed positioned at the current place.
 
--- Primitives: true, false, null. We only parse the first char and assume
--- that it is well-formed.
-function Walker:read_primitive()
-  assert(self:type() == jason.PRIMITIVE)
-
+local function handle_boolean(self, skip)
   local char = current_char(self)
-  if char == TRUE_FIRST then
-    advance_space(self, 4)
-    return true
-  elseif char == FALSE_FIRST then
-    advance_space(self, 5)
-    return false
-  else
-    advance_space(self, 4)
-    return nil
+  local is_true = (char == TRUE_FIRST)
+
+  -- Assume valid JSON
+  local length = (is_true and 4 or 5)
+  advance_space(self, length)
+
+  if not skip then
+    return is_true
   end
 end
 
-function Walker:skip_primitive()
-  self:read_primitive()
+local function handle_null(self)
+  advance_space(self, 4)
 end
 
-
--- Numbers: Use a pattern to find it, then use tonumber() to read it
-function Walker:skip_number()
-  local _, stop = find(self.data, '^-?%d+', self.position)
+local function handle_number(self, skip)
+  local start = self.position
+  local _, stop = find(self.data, '^-?%d+', start)
   assert(stop, 'expected number')
 
   -- Look for fractions
@@ -127,19 +129,13 @@ function Walker:skip_number()
 
   self.position = stop + 1
   eat_space(self)
-  return stop
+
+  if not skip then
+    return tonumber(sub(self.data, start, stop))
+  end
 end
 
-function Walker:read_number()
-  local start = self.position
-  local stop = self:skip_number()
-  return tonumber(sub(self.data, start, stop))
-end
-
-
-function Walker:read_string(skip)
-  assert(self:type() == jason.STRING)
-
+local function handle_string(self, skip)
   local start = self.position+1
   local pos = start
   local parts
@@ -206,20 +202,105 @@ function Walker:read_string(skip)
   end
 end
 
-function Walker:skip_string()
-  self:read_string(true)
-end
-
--- Object Keys: They're just strings followed by a colon.
-function Walker:read_key(skip)
-  local key = self:read_string(skip) -- pass along skip
+local function handle_key(self, skip)
+  local key = handle_string(self, skip)
   assert(current_char(self) == NAME_SEP)
   advance_space(self)
   return key
 end
 
+local function handle_object(self, skip)
+  local obj = (not skip) and {}
+
+  while self:next_item() do
+    local key = handle_key(self, skip)
+
+    if skip then
+      self:skip()
+    else
+      obj[key] = self:read()
+    end
+  end
+
+  return obj
+end
+
+local function handle_array(self, skip)
+  local arr = (not skip) and {}
+
+  while self:next_item() do
+    if skip then
+      self:skip()
+    else
+      insert(arr, self:read())
+    end
+  end
+
+  return arr
+end
+
+-- Generic handler. Checks the current type and invokes the correct
+-- handler. You can pass in the expected type in +exp_t+.
+local function handle(self, exp_t)
+  local t = self:type()
+  local skip = (exp_t ~= jason.ANY) and (t ~= exp_t)
+
+  if t == jason.OBJECT then
+    return handle_object(self, skip)
+  elseif t == jason.ARRAY then
+    return handle_array(self, skip)
+  elseif t == jason.STRING then
+    return handle_string(self, skip)
+  elseif t == jason.NUMBER then
+    return handle_number(self, skip)
+  elseif t == jason.BOOLEAN then
+    return handle_boolean(self, skip)
+  elseif t == jason.NULL then
+    -- Doesn't really matter what we return here
+    handle_null(self)
+  end
+end
+
+function Walker:read()
+  return handle(self, jason.ANY)
+end
+
+function Walker:read_boolean()
+  return handle(self, jason.BOOLEAN)
+end
+
+function Walker:read_null()
+  local is_null = (self:type() == jason.NULL)
+  handle(self, jason.NONE) -- skip the value
+  return is_null
+end
+
+function Walker:read_number()
+  return handle(self, jason.NUMBER)
+end
+
+function Walker:read_string()
+  return handle(self, jason.STRING)
+end
+
+function Walker:read_object()
+  return handle(self, jason.OBJECT)
+end
+
+function Walker:read_array()
+  return handle(self, jason.ARRAY)
+end
+
+function Walker:read_key()
+  return handle_key(self)
+end
+
 function Walker:skip_key()
-  self:read_key(true)
+  return handle_key(self, true)
+end
+
+function Walker:skip()
+  handle(self, jason.NONE)
 end
 
 function Walker:next_item()
@@ -235,76 +316,8 @@ function Walker:next_item()
   return true
 end
 
-function Walker:skip_object()
-  while self:next_item() do
-    self:skip_key()
-    self:skip_any()
-  end
-end
-
-function Walker:skip_array()
-  while self:next_item() do
-    self:skip_any()
-  end
-end
-
-function Walker:skip_any()
-  local t = self:type()
-
-  if t == jason.OBJECT then
-    self:skip_object()
-  elseif t == jason.ARRAY then
-    self:skip_array()
-  elseif t == jason.STRING then
-    self:skip_string()
-  elseif t == jason.NUMBER then
-    self:skip_number()
-  elseif t == jason.PRIMITIVE then
-    self:skip_primitive()
-  else
-    return false
-  end
-
-  return true
-end
-
-function Walker:read_value()
-  local t = self:type()
-
-  if t == jason.STRING then
-    return self:read_string()
-  elseif t == jason.NUMBER then
-    return self:read_number()
-  elseif t == jason.PRIMITIVE then
-    return self:read_primitive()
-  else
-    error('no value type at position')
-  end
-end
-
--- Very simple decoder
-local function decode(walker)
-  local t = walker:type()
-  if t == jason.OBJECT then
-    local obj = {}
-    while walker:next_item() do
-      local key = walker:read_key()
-      obj[key] = decode(walker)
-    end
-    return obj
-  elseif t == jason.ARRAY then
-    local arr = {}
-    while walker:next_item() do
-      insert(arr, decode(walker))
-    end
-    return arr
-  else
-    return walker.read_value()
-  end
-end
-
 function jason.decode(data)
-  return decode(jason.walk(data))
+  return jason.walk(data):read()
 end
 
 return jason

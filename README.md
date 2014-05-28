@@ -10,7 +10,7 @@ local walker = jason.walk('[{"id":123},{"id":456}]')
 
 -- The walker starts at the beginning.
 -- We can check what type is right under the cursor now:
-print(walker:type() == jason.ARRAY)
+assert(walker:type() == jason.ARRAY)
 
 -- Because we're at an array, we can use next_item() to see
 -- if there's anything in the array:
@@ -19,7 +19,7 @@ while walker:next_item() then
   --    [{"id":123},{"id":456}]
   --     ^
   -- We can verify that we're actually at an object:
-  print(walker:type() == jason.OBJECT)
+  assert(walker:type() == jason.OBJECT)
 
   -- And then we can iterate over the object:
   while walker:next_item() then
@@ -30,12 +30,12 @@ while walker:next_item() then
       -- Notice how we get type checking as-we-parse. Parsing
       -- [{"id":"123"}] with this code would lead to a type error
       -- (exception) at this point.
-      print(walker:read_number())
+      print(assert(walker:read_number()))
     else
       -- It's *very* important that you always read or skip, otherwise
       -- the walker gets very confused and is completely lost when
       -- next_item() is executed again.
-      walker:skip_any()
+      walker:skip()
     end
   end
 end
@@ -56,7 +56,8 @@ walker:type()
 --   jason.OBJECT
 --   jason.ARRAY
 --   jason.STRING
---   jason.PRIMITIVE
+--   jason.BOOLEAN
+--   jason.NULL
 --   jason.NUMBER
 --   jason.EOF
 -- 
@@ -70,12 +71,29 @@ walker:fork() --> Walker
 
 
 ---- Readers
--- Note that all the following methods will error() if the value under
--- the current position in the JSON is not of the expected type.
+-- Note that all of the following methods will return +nil+ if the value
+-- under the current position in the JSON is not of the expected type.
 
-walker:read_primitive() --> true, false, or nil
--- Parses a primitive value (true, false, null) at the current position
--- in the JSON.
+
+walker:read() --> 
+-- Parses either an object, array or primitive value at the current
+-- position in the JSON.
+
+
+walker:read_object() --> table
+-- Parses an object at the current position in the JSON.
+
+
+walker:read_array() --> table
+-- Parses an array at the current position in the JSON.
+
+
+walker:read_boolean() --> true, false
+-- Parses a boolean at the current position in the JSON.
+
+
+walker:read_null() --> true
+-- Parses a null value and returns true.
 
 
 walker:read_number() --> number
@@ -84,11 +102,6 @@ walker:read_number() --> number
 
 walker:read_string() --> string
 -- Parses a string at the current position in the JSON.
-
-
-walker:read_value() --> number, string, true, false, or nil
--- Parses either a number, string, or primitive value at the current
--- position in the JSON.
 
 
 walker:read_key() --> string
